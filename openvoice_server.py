@@ -47,6 +47,30 @@ SUPPORTED_LANGUAGES = ["EN_NEWEST", "EN", "ES", "FR", "ZH", "JP", "KR"]
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+
+def _trust_torch_hub_repos():
+    """预先信任 silero-vad 仓库，避免 torch.hub 在非交互式环境弹出
+    'Do you trust this repository (y/N)?' 确认框，导致音色嵌入提取（vad=True 路径）
+    直接报错失败。该仓库由 whisper_timestamped 内部通过 torch.hub 加载。"""
+    try:
+        hub_dir = torch.hub.get_dir()
+        trusted_file = os.path.join(hub_dir, "trusted_list")
+        repos = ["snakers4/silero-vad"]
+        os.makedirs(hub_dir, exist_ok=True)
+        existing = ""
+        if os.path.exists(trusted_file):
+            with open(trusted_file, "r") as f:
+                existing = f.read()
+        for r in repos:
+            if r not in existing.split():
+                with open(trusted_file, "a") as f:
+                    f.write(r + "\n")
+    except Exception as e:  # noqa: BLE001
+        print(f"[warn] 预信任 torch hub 仓库失败（不影响启动，但 vad 提取可能失败）：{e}")
+
+
+_trust_torch_hub_repos()
+
 app = FastAPI(title="OpenVoice API", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
