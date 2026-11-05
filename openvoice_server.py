@@ -98,17 +98,44 @@ def _load_tts(language: str):
     return model
 
 
+def _resolve_source_se_path(language: str, speaker: str):
+    """定位基础说话人的音色嵌入(.pth)。
+
+    V2 权重里 ses 文件名形如 en-newest / en-us / zh / fr / kr / es 等，
+    与 MeloTTS 的 spk2id 键名并不总是一一对应（例如没有 en-default.pth）。
+    这里做多重回退，尽量按语言自动选到存在的文件。
+    """
+    ses_dir = Path(V2_CKPT) / "base_speakers" / "ses"
+    lang_lower = language.lower()
+    # 1) 显式指定 speaker（支持 melo 键名，也支持直接给文件名 stem）
+    if speaker:
+        for cand in (speaker.lower().replace("_", "-"), speaker):
+            p = ses_dir / f"{cand}.pth"
+            if p.exists():
+                return p
+    # 2) 按语言推导：优先 <lang>-newest，再 <lang>，再任意以 <lang> 开头
+    for cand in (f"{lang_lower}-newest", lang_lower):
+        p = ses_dir / f"{cand}.pth"
+        if p.exists():
+            return p
+    matches = sorted(ses_dir.glob(f"{lang_lower}*.pth"))
+    if matches:
+        return matches[0]
+    # 3) 兜底：整个目录第一个 pth
+    any_se = sorted(ses_dir.glob("*.pth"))
+    if any_se:
+        return any_se[0]
+    raise HTTPException(
+        status_code=400,
+        detail=f"找不到任何基础说话人的音色嵌入，请检查 {ses_dir} 下是否存在 V2 权重",
+    )
+
+
 def _get_source_se(language: str, speaker: str, tts):
     key = f"{language}|{speaker}"
     if key in _source_se_cache:
         return _source_se_cache[key]
-    speaker_key = speaker.lower().replace("_", "-")
-    se_path = Path(V2_CKPT) / "base_speakers" / "ses" / f"{speaker_key}.pth"
-    if not se_path.exists():
-        raise HTTPException(
-            status_code=400,
-            detail=f"找不到基础说话人的音色嵌入：{se_path}（language={language}, speaker={speaker}）",
-        )
+    se_path = _resolve_source_se_path(language, speaker)
     se = torch.load(str(se_path), map_location=DEVICE)
     _source_se_cache[key] = se
     return se
