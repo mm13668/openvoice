@@ -166,7 +166,13 @@ def _get_source_se(language: str, speaker: str, tts):
 
 
 def _get_target_se(audio_bytes: bytes, ext: str):
-    """用参考音频内容哈希做缓存，相同参考音频只提取一次。"""
+    """用参考音频内容哈希做缓存，相同参考音频只提取一次。
+
+    直接对整段参考音频调用 ToneColorConverter.extract_se 提取音色嵌入，
+    不复用 se_extractor 的 VAD 切分（其 silero/whisper 路径依赖 torch.hub 从
+    GitHub 下载模型，在无外网或交互受限的服务器上会失败）。对干净、单人的
+    短参考音频，直接提取效果一致且完全离线。
+    """
     h = hashlib.sha256(audio_bytes).hexdigest()
     if h in _target_se_cache:
         return _target_se_cache[h]
@@ -178,7 +184,7 @@ def _get_target_se(audio_bytes: bytes, ext: str):
 
     converter = _load_converter()
     try:
-        target_se, _ = se_extractor.get_se(ref_path, converter, vad=True)
+        target_se = converter.extract_se([ref_path], se_save_path=None)
     finally:
         os.remove(ref_path)
 
