@@ -26,7 +26,6 @@ import torch
 import soundfile as sf
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.background import BackgroundTask
 from fastapi.middleware.cors import CORSMiddleware
 
 from openvoice import se_extractor
@@ -225,11 +224,14 @@ def clone_voice(
         except OSError:
             pass
 
+    bg = BackgroundTasks()
+    bg.add_task(_cleanup, out_path)
+
     return FileResponse(
         out_path,
         media_type="audio/wav",
         filename="cloned_voice.wav",
-        background=BackgroundTask(_cleanup, out_path),
+        background=bg,
     )
 
 
